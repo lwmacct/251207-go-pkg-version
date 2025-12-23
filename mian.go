@@ -15,6 +15,7 @@ var Command = &cli.Command{
 	Usage:     "一个 CLI 应用程序示例",
 	UsageText: `演示如何使用包 version 来管理应用程序版本信息。`,
 	Action:    action,
+	Version:   version.GetVersion(),
 	Commands:  []*cli.Command{version.Command},
 	Flags: []cli.Flag{
 		&cli.StringFlag{

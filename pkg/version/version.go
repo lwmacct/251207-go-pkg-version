@@ -11,16 +11,25 @@ import (
 	"time"
 )
 
+// unknown 表示未设置的版本信息值
+const unknown = "Unknown"
+
 // 构建时注入的版本信息变量。
 // 通过 go build -ldflags "-X package.Variable=value" 注入。
 var (
-	AppRawName string = "Unknown" // 应用原始名称
-	AppProject string = "Unknown" // 项目名称（通常为 Git 仓库名）
-	AppVersion string = "Unknown" // 应用版本号（语义化版本）
-	GitCommit  string = "Unknown" // Git 提交哈希
-	BuildTime  string = "Unknown" // 构建时间
-	Developer  string = "Unknown" // 开发者/维护者
+	AppRawName string = unknown // 应用原始名称
+	AppProject string = unknown // 项目名称（通常为 Git 仓库名）
+	AppVersion string = unknown // 应用版本号（语义化版本）
+	GitCommit  string = unknown // Git 提交哈希
+	BuildTime  string = unknown // 构建时间
+	Developer  string = unknown // 开发者/维护者
 )
+
+// isKnown 检查值是否为有效的已知值（非空、非空白、非 "Unknown"）
+func isKnown(v string) bool {
+	v = strings.TrimSpace(v)
+	return v != "" && v != unknown
+}
 
 // datePrefix 用于匹配项目名称前缀中的日期格式（如 "251203-"）
 var datePrefix = regexp.MustCompile(`^[0-9-]{7}`)
@@ -40,17 +49,17 @@ func initFromBuildInfo() {
 	// 从模块路径提取项目名称和开发者
 	if info.Main.Path != "" {
 		parts := strings.Split(info.Main.Path, "/")
-		if AppProject == "Unknown" {
+		if !isKnown(AppProject) {
 			AppProject = path.Base(info.Main.Path)
 		}
 		// 从 <domain>/<user>/<repo> 格式中提取开发者
-		if Developer == "Unknown" && len(parts) >= 2 {
-			Developer = "http://" + parts[0] + "/" + parts[1] // 第二部分是用户名/组织名
+		if !isKnown(Developer) && len(parts) >= 2 {
+			Developer = "http://" + parts[0] + "/" + parts[1]
 		}
 	}
 
 	// 从模块版本提取应用版本
-	if AppVersion == "Unknown" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+	if !isKnown(AppVersion) && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		AppVersion = info.Main.Version
 	}
 
@@ -58,7 +67,7 @@ func initFromBuildInfo() {
 	for _, setting := range info.Settings {
 		switch setting.Key {
 		case "vcs.revision":
-			if GitCommit == "Unknown" && setting.Value != "" {
+			if !isKnown(GitCommit) && setting.Value != "" {
 				// 使用短 hash（7位），与 git log -n 1 --format=%h 一致
 				if len(setting.Value) > 7 {
 					GitCommit = setting.Value[:7]
@@ -67,19 +76,19 @@ func initFromBuildInfo() {
 				}
 			}
 		case "vcs.time":
-			if BuildTime == "Unknown" && setting.Value != "" {
+			if !isKnown(BuildTime) && setting.Value != "" {
 				BuildTime = formatBuildTime(setting.Value)
 			}
 		case "vcs.modified":
 			// 如果有未提交的修改，标记为 dirty
-			if setting.Value == "true" && GitCommit != "Unknown" && !strings.HasSuffix(GitCommit, "-dirty") {
+			if setting.Value == "true" && isKnown(GitCommit) && !strings.HasSuffix(GitCommit, "-dirty") {
 				GitCommit += "-dirty"
 			}
 		}
 	}
 
 	// 从 AppProject 中提取 AppRawName（去除日期前缀）
-	if AppRawName == "Unknown" && AppProject != "Unknown" {
+	if !isKnown(AppRawName) && isKnown(AppProject) {
 		AppRawName = datePrefix.ReplaceAllString(AppProject, "")
 	}
 }
@@ -121,13 +130,18 @@ func PrintVersionJSON() {
 `, AppRawName, AppProject, AppVersion, GitCommit, BuildTime, Developer)
 }
 
-// GetVersion 返回应用版本号。
-// 若 AppVersion 为 "Unknown" 但 GitCommit 已知，则返回 "dev-<commit>" 格式。
+// GetVersion 返回应用版本号，按优先级降序 fallback：
+//  1. AppVersion（若有效）
+//  2. dev-<GitCommit>（若 GitCommit 有效）
+//  3. "Unknown"
 func GetVersion() string {
-	if AppVersion == "Unknown" && GitCommit != "Unknown" {
+	if isKnown(AppVersion) {
+		return AppVersion
+	}
+	if isKnown(GitCommit) {
 		return "dev-" + GitCommit
 	}
-	return AppVersion
+	return unknown
 }
 
 // GetBuildInfo 返回构建相关信息 (用于健康检查等)
