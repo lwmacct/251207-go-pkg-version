@@ -17,5 +17,4 @@ repos:
   - repo: https://github.com/lwmacct/251211-pre-commit
     rev: v1.0.2
     hooks:
-      - id: prettier
       - id: golangci-lint
