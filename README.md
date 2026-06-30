@@ -7,7 +7,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/lwmacct/251207-go-pkg-version)](https://goreportcard.com/report/github.com/lwmacct/251207-go-pkg-version)
 [![GitHub Tag](https://img.shields.io/github/v/tag/lwmacct/251207-go-pkg-version?sort=semver)](https://github.com/lwmacct/251207-go-pkg-version/tags)
 
-Go 应用程序版本信息管理库，支持 ldflags 注入和 BuildInfo 自动读取。
+Go 应用程序版本信息管理库，支持 ldflags 注入、BuildInfo 自动读取，以及 Go module cache 的版本源信息 fallback。
 
 ## 安装
 

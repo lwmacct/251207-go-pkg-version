@@ -1,14 +1,18 @@
 package version
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/module"
 )
 
 // unknown 表示未设置的版本信息值
@@ -68,12 +72,7 @@ func initFromBuildInfo() {
 		switch setting.Key {
 		case "vcs.revision":
 			if !isKnown(GitCommit) && setting.Value != "" {
-				// 使用短 hash（7位），与 git log -n 1 --format=%h 一致
-				if len(setting.Value) > 7 {
-					GitCommit = setting.Value[:7]
-				} else {
-					GitCommit = setting.Value
-				}
+				GitCommit = shortCommit(setting.Value)
 			}
 		case "vcs.time":
 			if !isKnown(BuildTime) && setting.Value != "" {
@@ -87,10 +86,105 @@ func initFromBuildInfo() {
 		}
 	}
 
+	initFromModuleCache(info.Main.Path, info.Main.Version)
+
 	// 从 AppProject 中提取 AppRawName（去除日期前缀）
 	if !isKnown(AppRawName) && isKnown(AppProject) {
 		AppRawName = datePrefix.ReplaceAllString(AppProject, "")
 	}
+}
+
+type moduleInfoFile struct {
+	Time   time.Time `json:"Time"`
+	Origin struct {
+		Hash string `json:"Hash"`
+	} `json:"Origin"`
+}
+
+func initFromModuleCache(modulePath string, moduleVersion string) {
+	if !shouldReadModuleCache(modulePath, moduleVersion) {
+		return
+	}
+
+	infoFile, err := readModuleInfoFile(modulePath, moduleVersion)
+	if err != nil {
+		return
+	}
+
+	if !isKnown(GitCommit) && infoFile.Origin.Hash != "" {
+		GitCommit = shortCommit(infoFile.Origin.Hash)
+	}
+	if !isKnown(BuildTime) && !infoFile.Time.IsZero() {
+		BuildTime = formatTime(infoFile.Time)
+	}
+}
+
+func shouldReadModuleCache(modulePath string, moduleVersion string) bool {
+	return modulePath != "" && isKnown(moduleVersion) && (!isKnown(GitCommit) || !isKnown(BuildTime))
+}
+
+func readModuleInfoFile(modulePath string, moduleVersion string) (moduleInfoFile, error) {
+	var result moduleInfoFile
+
+	cacheDir, err := moduleCacheDir()
+	if err != nil {
+		return result, err
+	}
+
+	escapedPath, err := module.EscapePath(modulePath)
+	if err != nil {
+		return result, err
+	}
+	escapedVersion, err := module.EscapeVersion(moduleVersion)
+	if err != nil {
+		return result, err
+	}
+
+	infoPath := filepath.Join(cacheDir, "cache", "download", escapedPath, "@v", escapedVersion+".info")
+	err = validateModuleCachePath(cacheDir, infoPath)
+	if err != nil {
+		return result, err
+	}
+
+	content, err := os.ReadFile(infoPath) // #nosec G304 -- module path and version are escaped, and the final path is constrained to GOMODCACHE.
+	if err != nil {
+		return result, err
+	}
+	return result, json.Unmarshal(content, &result)
+}
+
+func validateModuleCachePath(cacheDir string, infoPath string) error {
+	absCacheDir, err := filepath.Abs(cacheDir)
+	if err != nil {
+		return err
+	}
+	absInfoPath, err := filepath.Abs(infoPath)
+	if err != nil {
+		return err
+	}
+
+	relPath, err := filepath.Rel(absCacheDir, absInfoPath)
+	if err != nil {
+		return err
+	}
+	if relPath == "." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) || filepath.IsAbs(relPath) {
+		return fmt.Errorf("module info path outside module cache: %s", absInfoPath)
+	}
+	return nil
+}
+
+func moduleCacheDir() (string, error) {
+	if value := strings.TrimSpace(os.Getenv("GOMODCACHE")); value != "" {
+		return value, nil
+	}
+	if value := strings.TrimSpace(os.Getenv("GOPATH")); value != "" {
+		return filepath.Join(strings.Split(value, string(os.PathListSeparator))[0], "pkg", "mod"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "go", "pkg", "mod"), nil
 }
 
 // formatBuildTime 将 VCS 时间（RFC3339 格式）转换为 UTC+8 时区格式。
@@ -99,9 +193,20 @@ func formatBuildTime(vcsTime string) string {
 	if err != nil {
 		return vcsTime // 解析失败则返回原始值
 	}
+	return formatTime(t)
+}
+
+func formatTime(t time.Time) string {
 	// 使用固定偏移量 UTC+8，避免依赖系统时区数据库
 	cst := time.FixedZone("CST", 8*60*60)
 	return t.In(cst).Format("2006-01-02 15:04:05 MST")
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
 }
 
 // PrintBuildInfo 打印详细的构建信息（包括版本号、Git提交、构建时间等）

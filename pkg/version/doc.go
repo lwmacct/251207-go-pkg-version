@@ -6,6 +6,8 @@
 //
 //  1. 构建时注入 (ldflags)：通过 go build -ldflags 在编译时注入
 //  2. 运行时读取 (BuildInfo)：自动从 runtime/debug.BuildInfo 读取（Go 1.18+）
+//  3. Go module cache：当 go install module@version 的二进制缺少 VCS 信息时，
+//     尝试从本机 GOMODCACHE 的 module .info 文件读取 tag 对应的 Origin.Hash 和 Time
 //
 // # 构建时注入示例
 //

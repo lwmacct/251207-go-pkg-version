@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -79,6 +80,60 @@ func TestFormatBuildTime(t *testing.T) {
 				t.Errorf("formatBuildTime(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestInitFromModuleCache(t *testing.T) {
+	restore := saveAndRestore()
+	defer restore()
+
+	AppVersion = "v1.2.3"
+	GitCommit = unknown
+	BuildTime = unknown
+
+	cacheDir := t.TempDir()
+	t.Setenv("GOMODCACHE", cacheDir)
+
+	infoPath := filepath.Join(cacheDir, "cache", "download", "github.com", "example", "app", "@v", "v1.2.3.info")
+	if err := os.MkdirAll(filepath.Dir(infoPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(infoPath, []byte(`{
+  "Version": "v1.2.3",
+  "Time": "2024-12-07T10:30:00Z",
+  "Origin": {
+    "VCS": "git",
+    "URL": "https://github.com/example/app",
+    "Hash": "abcdef1234567890",
+    "Ref": "refs/tags/v1.2.3"
+  }
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	initFromModuleCache("github.com/example/app", "v1.2.3")
+
+	if GitCommit != "abcdef1" {
+		t.Fatalf("GitCommit = %q, want %q", GitCommit, "abcdef1")
+	}
+	if BuildTime != "2024-12-07 18:30:00 CST" {
+		t.Fatalf("BuildTime = %q, want %q", BuildTime, "2024-12-07 18:30:00 CST")
+	}
+}
+
+func TestInitFromModuleCacheKeepsKnownValues(t *testing.T) {
+	restore := saveAndRestore()
+	defer restore()
+
+	AppVersion = "v1.2.3"
+	GitCommit = "known"
+	BuildTime = "known-time"
+	t.Setenv("GOMODCACHE", t.TempDir())
+
+	initFromModuleCache("github.com/example/app", "v1.2.3")
+
+	if GitCommit != "known" || BuildTime != "known-time" {
+		t.Fatalf("known values changed: commit=%q time=%q", GitCommit, BuildTime)
 	}
 }
 

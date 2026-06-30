@@ -14,7 +14,12 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=512"]
 
-  - repo: https://github.com/lwmacct/251211-pre-commit
-    rev: v1.0.2
+  - repo: local
     hooks:
       - id: golangci-lint
+        name: golangci-lint
+        description: Run golangci-lint to lint and fix Go code
+        entry: golangci-lint run --new --fix
+        types: [go]
+        language: system
+        pass_filenames: false
